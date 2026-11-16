@@ -1110,29 +1110,42 @@
             if (!proxyUrl || proxyUrl.includes('yourname.workers.dev')) {
                 return { ok: false, error: 'Server proxy URL not configured. Set your Cloudflare Worker URL first.' };
             }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 6500);
             try {
                 const res = await fetch(proxyUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'verify_pin', role, pin })
+                    body: JSON.stringify({ action: 'verify_pin', role, pin: String(pin).trim() }),
+                    signal: controller.signal
                 });
+                clearTimeout(timer);
                 const data = await res.json();
                 if (res.ok && data.ok === true) {
+                    try { sessionStorage.setItem(`bhati_unlocked_${role}`, '1'); } catch (e) {}
                     return { ok: true };
                 }
                 return { ok: false, error: data.error || 'Incorrect Security Key. Access Denied.' };
             } catch (err) {
+                clearTimeout(timer);
+                if (err && err.name === 'AbortError') {
+                    return { ok: false, error: 'Security server timed out (slow network). Please try again.' };
+                }
                 return { ok: false, error: 'Unable to reach security server. Check internet connection.' };
             }
         }
 
         function getActiveWaProxyUrl() {
             try {
-                const stored = localStorage.getItem('bhati_wa_proxy_url');
-                return (stored && stored.trim().startsWith('http')) ? stored.trim() : DEFAULT_WA_PROXY_URL;
-            } catch (e) {
-                return DEFAULT_WA_PROXY_URL;
-            }
+                const stored = (localStorage.getItem('bhati_wa_proxy_url') || '').trim();
+                if (stored.startsWith('http') && !stored.includes('yourname.workers.dev')) {
+                    return stored;
+                }
+                if (stored.includes('yourname.workers.dev')) {
+                    localStorage.removeItem('bhati_wa_proxy_url');
+                }
+            } catch (e) {}
+            return DEFAULT_WA_PROXY_URL;
         }
 
         // Default Cars Data
@@ -2046,13 +2059,28 @@ Cab Type: ${car}`;
         // Admin Panel Functions
         function openAdminPanel() {
             const adminModal = document.getElementById('adminModal');
+            let alreadyUnlocked = false;
+            try { alreadyUnlocked = sessionStorage.getItem('bhati_unlocked_admin') === '1'; } catch (e) {}
+            adminModal.classList.remove('hidden');
+            adminModal.classList.add('flex');
+            if (alreadyUnlocked) {
+                document.getElementById('adminPinSection').classList.add('hidden');
+                document.getElementById('adminDashboardSection').classList.remove('hidden');
+                document.getElementById('waProxyUrlInput').value = getActiveWaProxyUrl();
+                document.getElementById('adminDispatchWaInput').value = getActiveDispatchWa();
+                document.getElementById('adminCallPhoneInput').value = getActiveCallPhone();
+                document.getElementById('adminEmailInput').value = getActiveAdminEmail();
+                document.getElementById('adminWeb3KeyInput').value = getActiveWeb3Key();
+                document.getElementById('adminOfficeHeadingInput').value = getActiveOfficeHeading();
+                document.getElementById('adminOfficeAddressInput').value = getActiveOfficeAddress();
+                switchAdminTab('manageCatalog');
+                return;
+            }
             document.getElementById('adminPinSection').classList.remove('hidden');
             document.getElementById('adminDashboardSection').classList.add('hidden');
             document.getElementById('adminPinError').classList.add('hidden');
             document.getElementById('adminPinInput').value = '';
-            adminModal.classList.remove('hidden');
-            adminModal.classList.add('flex');
-            setTimeout(() => document.getElementById('adminPinInput').focus(), 100);
+            setTimeout(() => document.getElementById('adminPinInput').focus(), 60);
         }
 
         function closeAdminModal() {
@@ -2120,13 +2148,21 @@ Cab Type: ${car}`;
         // Separate Records Panel Functions
         function openRecordsPanel() {
             const recordsModal = document.getElementById('recordsModal');
+            let alreadyUnlocked = false;
+            try { alreadyUnlocked = sessionStorage.getItem('bhati_unlocked_records') === '1'; } catch (e) {}
+            recordsModal.classList.remove('hidden');
+            recordsModal.classList.add('flex');
+            if (alreadyUnlocked) {
+                document.getElementById('recordsPinSection').classList.add('hidden');
+                document.getElementById('recordsDashboardSection').classList.remove('hidden');
+                switchRecordsTab('all');
+                return;
+            }
             document.getElementById('recordsPinSection').classList.remove('hidden');
             document.getElementById('recordsDashboardSection').classList.add('hidden');
             document.getElementById('recordsPinError').classList.add('hidden');
             document.getElementById('recordsPinInput').value = '';
-            recordsModal.classList.remove('hidden');
-            recordsModal.classList.add('flex');
-            setTimeout(() => document.getElementById('recordsPinInput').focus(), 100);
+            setTimeout(() => document.getElementById('recordsPinInput').focus(), 60);
         }
 
         function closeRecordsModal() {

@@ -97,7 +97,11 @@ export default {
 
       // 4. Send Automated Meta WhatsApp Cloud API Alert
       if (body.waBodyText) {
-        if (!env.WA_TOKEN || !env.WA_PHONE_ID || !env.WA_TO_NUMBER) {
+        const cleanToken = String(env.WA_TOKEN || '').replace(/^["'\s]+|["'\s]+$/g, '');
+        const cleanPhoneId = String(env.WA_PHONE_ID || '').replace(/[^0-9]/g, '');
+        const cleanToNumber = String(env.WA_TO_NUMBER || '').replace(/[^0-9]/g, '');
+
+        if (!cleanToken || !cleanPhoneId || !cleanToNumber) {
           return jsonResponse(
             {
               error: {
@@ -109,16 +113,16 @@ export default {
         }
 
         const waRes = await fetch(
-          `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`,
+          `https://graph.facebook.com/v19.0/${cleanPhoneId}/messages`,
           {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${env.WA_TOKEN}`,
+              Authorization: `Bearer ${cleanToken}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               messaging_product: 'whatsapp',
-              to: env.WA_TO_NUMBER,
+              to: cleanToNumber,
               type: 'text',
               text: { body: body.waBodyText },
             }),
