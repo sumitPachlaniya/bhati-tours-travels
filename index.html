@@ -282,19 +282,22 @@
                                     </div>
                                 </div>
                                 <div>
-                                    <label for="customerPhone" class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Mobile / WhatsApp *</label>
+                                    <div class="flex items-center justify-between mb-1.5">
+                                        <label for="customerPhone" class="block text-xs font-bold text-slate-700 uppercase tracking-wider">Mobile / WhatsApp *</label>
+                                        <span id="phoneDigitCounter" class="text-[10px] font-bold text-slate-400">0/10 digits</span>
+                                    </div>
                                     <div class="relative">
                                         <i class="fa-solid fa-mobile-screen text-slate-400 absolute left-3.5 top-3.5 text-sm"></i>
-                                        <input type="tel" id="customerPhone" required pattern="[0-9+\s-]{10,15}" placeholder="10-digit mobile number" 
+                                        <input type="tel" id="customerPhone" required maxlength="10" minlength="10" inputmode="numeric" pattern="[0-9]{10}" placeholder="Enter 10-digit mobile no." 
                                                class="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-saffron-500 focus:bg-white transition-all">
                                     </div>
                                 </div>
                             </div>
 
-                            <button type="submit" id="bookingSubmitBtn"
-                                    class="w-full bg-gradient-to-r from-saffron-600 to-saffron-500 hover:from-saffron-700 hover:to-saffron-600 text-white font-display font-bold text-base py-3.5 px-6 rounded-xl shadow-lg shadow-saffron-500/30 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer mt-2">
-                                <span id="bookingSubmitText">Book Cab Now</span>
-                                <i id="bookingSubmitIcon" class="fa-solid fa-arrow-right"></i>
+                            <button type="submit" id="bookingSubmitBtn" disabled
+                                    class="w-full bg-gradient-to-r from-saffron-600 to-saffron-500 text-white font-display font-bold text-base py-3.5 px-6 rounded-xl shadow-lg shadow-saffron-500/30 transition-all flex items-center justify-center gap-2 mt-2 opacity-50 cursor-not-allowed">
+                                <span id="bookingSubmitText">Enter 10-Digit Mobile to Book</span>
+                                <i id="bookingSubmitIcon" class="fa-solid fa-lock"></i>
                             </button>
 
                             <p class="text-[11px] text-center text-slate-500 flex items-center justify-center gap-1.5">
@@ -913,10 +916,15 @@
                         </div>
 
                         <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
-                            <p id="contactSaveMsg" class="text-[11px] text-emerald-700 font-bold hidden">✓ WhatsApp, Call & Gmail settings saved! Click "Download Permanent index.html" to make permanent.</p>
-                            <button type="button" onclick="saveBusinessContactSettings()" class="ml-auto bg-saffron-600 hover:bg-saffron-700 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer">
+                            <p id="contactSaveMsg" class="text-[11px] text-emerald-700 font-bold hidden">✓ WhatsApp, Call & Gmail settings saved! Click "Download site-config.js" to make permanent.</p>
+                            <div class="ml-auto flex items-center gap-2">
+                                <button type="button" id="testGmailBtn" onclick="sendTestGmailFromAdmin()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs cursor-pointer">
+                                    <i class="fa-solid fa-paper-plane mr-1"></i> Test Gmail Alert
+                                </button>
+                                <button type="button" onclick="saveBusinessContactSettings()" class="bg-saffron-600 hover:bg-saffron-700 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer">
                                 Save Contact & Email Settings
                             </button>
+                            </div>
                         </div>
                     </div>
 
@@ -1877,30 +1885,89 @@
         }
 
         async function sendAutomatedBookingEmail({ name, phone, pickup, drop, date, car }) {
+            if (window.location.protocol === 'file:') {
+                return { ok: false, error: 'Blocked on local file:// URL — works on https://ujjaintaxiservices.com' };
+            }
+            const accessKey = getActiveWeb3Key();
+            if (!accessKey || accessKey.length < 10) {
+                return { ok: false, error: 'Web3Forms Access Key missing in Admin Settings' };
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 7500);
             try {
+                const formData = new FormData();
+                formData.append('access_key', accessKey);
+                formData.append('subject', `New Cab Booking: ${name} (${date}) - Bhati Tours & Travels`);
+                formData.append('from_name', 'Bhati Tours & Travels');
+                formData.append('replyto', getActiveAdminEmail());
+                formData.append('Passenger_Name', name);
+                formData.append('Mobile_Number', phone);
+                formData.append('Pickup_Location', pickup);
+                formData.append('Drop_Or_Package', drop);
+                formData.append('Travel_Date', date);
+                formData.append('Selected_Cab', car);
+
                 const emailRes = await fetch('https://api.web3forms.com/submit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                    body: JSON.stringify({
-                        access_key: getActiveWeb3Key(),
-                        subject: `New Cab Booking: ${name} (${date}) - Bhati Tours & Travels`,
-                        from_name: 'Bhati Tours Website',
-                        Passenger_Name: name,
-                        Mobile_Number: phone,
-                        Pickup_Location: pickup,
-                        Drop_Or_Package: drop,
-                        Travel_Date: date,
-                        Selected_Cab: car
-                    })
+                    headers: { 'Accept': 'application/json' },
+                    body: formData,
+                    signal: controller.signal
                 });
+                clearTimeout(timer);
                 const emailData = await emailRes.json();
-                if (emailData.success) {
+                if (emailData && emailData.success) {
                     return { ok: true };
                 }
-                return { ok: false, error: emailData.message || 'Email delivery failed' };
+                return { ok: false, error: (emailData && emailData.message) || 'Email delivery rejected' };
             } catch (err) {
+                clearTimeout(timer);
+                if (err && err.name === 'AbortError') {
+                    return { ok: false, error: 'Email request timed out' };
+                }
                 return { ok: false, error: 'Network error' };
             }
+        }
+
+        const customerPhoneInput = document.getElementById('customerPhone');
+        const phoneDigitCounter = document.getElementById('phoneDigitCounter');
+
+        function updatePhoneValidationState() {
+            if (!customerPhoneInput || !bookingSubmitBtn) return;
+            // Strip any non-digits and cap at 10 digits
+            const digitsOnly = customerPhoneInput.value.replace(/[^0-9]/g, '').slice(0, 10);
+            if (customerPhoneInput.value !== digitsOnly) {
+                customerPhoneInput.value = digitsOnly;
+            }
+            const len = digitsOnly.length;
+            const isValid = len === 10;
+
+            if (phoneDigitCounter) {
+                if (isValid) {
+                    phoneDigitCounter.textContent = '✓ 10/10 digits';
+                    phoneDigitCounter.className = 'text-[10px] font-bold text-emerald-600';
+                } else {
+                    phoneDigitCounter.textContent = `${len}/10 digits`;
+                    phoneDigitCounter.className = len > 0 ? 'text-[10px] font-bold text-amber-600' : 'text-[10px] font-bold text-slate-400';
+                }
+            }
+
+            if (isValid) {
+                bookingSubmitBtn.disabled = false;
+                bookingSubmitBtn.className = 'w-full bg-gradient-to-r from-saffron-600 to-saffron-500 hover:from-saffron-700 hover:to-saffron-600 text-white font-display font-bold text-base py-3.5 px-6 rounded-xl shadow-lg shadow-saffron-500/30 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer mt-2';
+                bookingSubmitText.textContent = 'Book Cab Now';
+                bookingSubmitIcon.className = 'fa-solid fa-arrow-right';
+            } else {
+                bookingSubmitBtn.disabled = true;
+                bookingSubmitBtn.className = 'w-full bg-gradient-to-r from-saffron-600 to-saffron-500 text-white font-display font-bold text-base py-3.5 px-6 rounded-xl shadow-lg shadow-saffron-500/30 transition-all flex items-center justify-center gap-2 mt-2 opacity-50 cursor-not-allowed';
+                bookingSubmitText.textContent = 'Enter 10-Digit Mobile to Book';
+                bookingSubmitIcon.className = 'fa-solid fa-lock';
+            }
+        }
+
+        if (customerPhoneInput) {
+            customerPhoneInput.addEventListener('input', updatePhoneValidationState);
+            customerPhoneInput.addEventListener('paste', () => setTimeout(updatePhoneValidationState, 0));
+            updatePhoneValidationState();
         }
 
         bookingForm.addEventListener('submit', async function(e) {
@@ -1911,7 +1978,12 @@
             const date = document.getElementById('travelDate').value;
             const car = document.getElementById('carType').value;
             const name = document.getElementById('customerName').value.trim();
-            const phone = document.getElementById('customerPhone').value.trim();
+            const phone = document.getElementById('customerPhone').value.replace(/[^0-9]/g, '');
+            if (phone.length !== 10) {
+                updatePhoneValidationState();
+                document.getElementById('customerPhone').focus();
+                return;
+            }
 
             bookingSubmitBtn.disabled = true;
             bookingSubmitText.textContent = 'Sending Booking Alert...';
@@ -1986,7 +2058,7 @@ Cab Type: ${car}`;
                 const fallbackSubject = `New Cab Booking: ${name} (${date}) - Bhati Tours & Travels`;
                 const mailtoLink = `mailto:${encodeURIComponent(activeAdminEmail)}?subject=${encodeURIComponent(fallbackSubject)}&body=${encodeURIComponent(latestBookingPlainText)}`;
                 emailAutoStatus.className = 'rounded-xl p-3 text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200 flex items-center justify-between gap-2';
-                emailAutoStatus.innerHTML = '<span><i class="fa-solid fa-triangle-exclamation text-amber-600 mr-1.5"></i> Auto-email failed. Tap backup:</span> <a href="' + mailtoLink + '" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shrink-0">Send Email</a>';
+                emailAutoStatus.innerHTML = `<span><i class="fa-solid fa-triangle-exclamation text-amber-600 mr-1.5"></i> ${escapeHtml(emailResult.error || 'Auto-email failed')}. Tap backup:</span> <a href="${mailtoLink}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs shrink-0">Send Email</a>`;
             }
 
             if (waResult.ok) {
@@ -1997,9 +2069,7 @@ Cab Type: ${car}`;
                 waApiStatusBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i><span><strong>Notice:</strong> ${escapeHtml(waResult.error)}</span>`;
             }
 
-            bookingSubmitBtn.disabled = false;
-            bookingSubmitText.textContent = 'Book Cab Now';
-            bookingSubmitIcon.className = 'fa-solid fa-arrow-right';
+            updatePhoneValidationState();
         });
 
         function copyBookingDetails() {
@@ -3088,7 +3158,33 @@ Cab Type: ${car}`;
 
 
 
-        function saveBusinessContactSettings() {
+                async function sendTestGmailFromAdmin() {
+            saveBusinessContactSettings();
+            const btn = document.getElementById('testGmailBtn');
+            const msg = document.getElementById('contactSaveMsg');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Sending...'; }
+            const res = await sendAutomatedBookingEmail({
+                name: 'Test Customer (Admin Verification)',
+                phone: '9876543210',
+                pickup: 'Ujjain Railway Station',
+                drop: 'Mahakal Lok & Omkareshwar Tour',
+                date: new Date().toISOString().split('T')[0],
+                car: 'Swift Dzire / Sedan (4+1 Seater)'
+            });
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-paper-plane mr-1"></i> Test Gmail Alert'; }
+            if (msg) {
+                msg.classList.remove('hidden');
+                if (res.ok) {
+                    msg.className = 'text-[11px] text-emerald-700 font-bold';
+                    msg.textContent = `✓ Test email delivered to ${getActiveAdminEmail()}! Check Inbox/Spam.`;
+                } else {
+                    msg.className = 'text-[11px] text-red-600 font-bold';
+                    msg.textContent = `✗ Email test failed: ${res.error}`;
+                }
+            }
+        }
+
+function saveBusinessContactSettings() {
             const dispatchWa = document.getElementById('adminDispatchWaInput').value.trim().replace(/[^0-9]/g, '');
             const callPhone = document.getElementById('adminCallPhoneInput').value.trim().replace(/[^0-9]/g, '');
             const emailVal = document.getElementById('adminEmailInput').value.trim();

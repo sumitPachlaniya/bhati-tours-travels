@@ -3,9 +3,8 @@
 // Required Cloudflare Worker Secrets (Settings -> Variables and Secrets):
 //   1. ADMIN_PIN      -> Your Admin Security Key
 //   2. RECORDS_PIN    -> Your Booking Records Vault Security Key
-// Optional Secrets (for automated Meta WhatsApp Cloud API alerts):
-//   3. WA_TOKEN       -> Meta WhatsApp Permanent Access Token
-//   4. WA_PHONE_ID    -> Meta WhatsApp Phone Number ID
+//   3. WA_TOKEN       -> Meta WhatsApp Permanent Access Token (starts with EAA...)
+//   4. WA_PHONE_ID    -> Meta WhatsApp Phone Number ID (digits only)
 //   5. WA_TO_NUMBER   -> Recipient WhatsApp number (e.g. 918817278961)
 // Optional KV Namespace Binding (for cross-device Booking Records sync):
 //   Bind a KV namespace named BOOKINGS_KV in Worker Settings -> Bindings
@@ -27,6 +26,13 @@ function jsonResponse(data, status = 200) {
   });
 }
 
+function sanitizeToken(raw) {
+  return String(raw || '')
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .replace(/\s+/g, '');
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -34,10 +40,22 @@ export default {
     }
 
     if (request.method === 'GET') {
+      const cleanToken = sanitizeToken(env.WA_TOKEN);
+      const cleanPhoneId = String(env.WA_PHONE_ID || '').replace(/[^0-9]/g, '');
+      const cleanToNumber = String(env.WA_TO_NUMBER || '').replace(/[^0-9]/g, '');
+
       return jsonResponse({
         ok: true,
         service: 'Bhati Tours & Travels Backend Proxy',
         status: 'active',
+        configCheck: {
+          hasAdminPin: Boolean(env.ADMIN_PIN),
+          hasRecordsPin: Boolean(env.RECORDS_PIN),
+          hasWaToken: cleanToken.startsWith('EAA') && cleanToken.length > 50,
+          tokenPrefix: cleanToken ? cleanToken.slice(0, 6) + '...' : 'MISSING',
+          hasWaPhoneId: cleanPhoneId.length > 5,
+          hasWaToNumber: cleanToNumber.length >= 10,
+        },
       });
     }
 
@@ -97,7 +115,7 @@ export default {
 
       // 4. Send Automated Meta WhatsApp Cloud API Alert
       if (body.waBodyText) {
-        const cleanToken = String(env.WA_TOKEN || '').replace(/^["'\s]+|["'\s]+$/g, '');
+        const cleanToken = sanitizeToken(env.WA_TOKEN);
         const cleanPhoneId = String(env.WA_PHONE_ID || '').replace(/[^0-9]/g, '');
         const cleanToNumber = String(env.WA_TO_NUMBER || '').replace(/[^0-9]/g, '');
 
@@ -105,7 +123,18 @@ export default {
           return jsonResponse(
             {
               error: {
-                message: 'Meta WhatsApp API secrets not set on Worker. Use manual WhatsApp button below.',
+                message: `Missing Cloudflare Secret(s): ${!cleanToken ? 'WA_TOKEN ' : ''}${!cleanPhoneId ? 'WA_PHONE_ID ' : ''}${!cleanToNumber ? 'WA_TO_NUMBER' : ''}`.trim(),
+              },
+            },
+            400
+          );
+        }
+
+        if (!cleanToken.startsWith('EAA')) {
+          return jsonResponse(
+            {
+              error: {
+                message: 'Invalid WA_TOKEN format in Cloudflare: token must start with EAA...',
               },
             },
             400
@@ -113,7 +142,7 @@ export default {
         }
 
         const waRes = await fetch(
-          `https://graph.facebook.com/v19.0/${cleanPhoneId}/messages`,
+          `https://graph.facebook.com/v21.0/${cleanPhoneId}/messages`,
           {
             method: 'POST',
             headers: {
