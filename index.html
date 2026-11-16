@@ -759,9 +759,14 @@
                             <i class="fa-solid fa-key mr-1"></i> Security Keys & API
                         </button>
                     </div>
-                    <button type="button" onclick="downloadPermanentHtml()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors cursor-pointer flex items-center gap-1.5">
-                        <i class="fa-solid fa-download"></i> Download Permanent index.html
-                    </button>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="downloadSiteConfigJs()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-saffron-600 hover:bg-saffron-700 text-white shadow-sm transition-colors cursor-pointer flex items-center gap-1.5">
+                            <i class="fa-solid fa-file-code"></i> Download site-config.js
+                        </button>
+                        <button type="button" onclick="downloadPermanentHtml()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors cursor-pointer flex items-center gap-1.5">
+                            <i class="fa-solid fa-download"></i> Download index.html
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Tab 1: Add / Edit / Remove Cars & Locations -->
@@ -1019,15 +1024,19 @@
         </div>
     </div>
 
+    <!-- External Local Configuration (Edit site-config.js & assets/ locally) -->
+    <script src="site-config.js"></script>
+
     <!-- Interactive JavaScript -->
     <script>
-        const DEFAULT_WA_PROXY_URL = 'https://bhati-wa-proxy.yourname.workers.dev';
-        const DEFAULT_WEB3FORMS_KEY = 'A7582f2f-e0c3-4a67-bb5a-40abc5b750ab';
-        const DEFAULT_DISPATCH_WA = '918817278961';
-        const DEFAULT_CALL_PHONE = '919990905007';
-        const DEFAULT_ADMIN_EMAIL = 'sumitpachlaniya786@gmail.com';
-        const DEFAULT_OFFICE_HEADING = 'Contact Ujjain Office';
-        const DEFAULT_OFFICE_ADDRESS = 'Shop No. 14, Near Mahakal Lok Gate & Railway Station Road, Freeganj, Ujjain, Madhya Pradesh 456010';
+        const CFG = window.SITE_CONFIG || {};
+        const DEFAULT_WA_PROXY_URL = CFG.waProxyUrl || 'https://bhati-tours-travels.sumitpachlaniya123.workers.dev';
+        const DEFAULT_WEB3FORMS_KEY = CFG.web3formsKey || 'A7582f2f-e0c3-4a67-bb5a-40abc5b750ab';
+        const DEFAULT_DISPATCH_WA = CFG.dispatchWa || '918817278961';
+        const DEFAULT_CALL_PHONE = CFG.callPhone || '919990905007';
+        const DEFAULT_ADMIN_EMAIL = CFG.adminEmail || 'sumitpachlaniya786@gmail.com';
+        const DEFAULT_OFFICE_HEADING = CFG.officeHeading || 'Contact Ujjain Office';
+        const DEFAULT_OFFICE_ADDRESS = CFG.officeAddress || 'Shop No. 14, Near Mahakal Lok Gate & Railway Station Road, Freeganj, Ujjain, Madhya Pradesh 456010';
 
         function getActiveOfficeHeading() {
             try {
@@ -1304,7 +1313,8 @@
                 const saved = JSON.parse(localStorage.getItem('bhati_fleet_data'));
                 if (Array.isArray(saved) && saved.length > 0) return saved;
             } catch (e) {}
-            return JSON.parse(JSON.stringify(DEFAULT_FLEET));
+            const baseFleet = (Array.isArray(CFG.fleet) && CFG.fleet.length > 0) ? CFG.fleet : DEFAULT_FLEET;
+            return JSON.parse(JSON.stringify(baseFleet));
         }
 
         function saveFleetData(data) {
@@ -1318,7 +1328,8 @@
                 const saved = JSON.parse(localStorage.getItem('bhati_packages_data'));
                 if (Array.isArray(saved) && saved.length > 0) return saved;
             } catch (e) {}
-            return JSON.parse(JSON.stringify(DEFAULT_PACKAGES));
+            const basePkgs = (Array.isArray(CFG.packages) && CFG.packages.length > 0) ? CFG.packages : DEFAULT_PACKAGES;
+            return JSON.parse(JSON.stringify(basePkgs));
         }
 
         function savePackagesData(data) {
@@ -1639,22 +1650,22 @@
 
         function applyHeroImage() {
             try {
-                const customHero = localStorage.getItem('bhati_hero_image');
+                const customHero = localStorage.getItem('bhati_hero_image') || CFG.heroImage;
                 const heroImg = document.getElementById('heroBgImage');
                 if (customHero && heroImg) heroImg.src = customHero;
-                const savedOpacity = localStorage.getItem('bhati_hero_opacity') || '50';
+                const savedOpacity = localStorage.getItem('bhati_hero_opacity') || CFG.heroOpacity || '50';
                 if (heroImg) {
                     heroImg.style.opacity = (parseInt(savedOpacity, 10) / 100).toString();
                 }
 
                 // Website Brand Logo
-                const customLogo = localStorage.getItem('bhati_website_logo');
+                const customLogo = localStorage.getItem('bhati_website_logo') || CFG.websiteLogo || '';
                 applyWebsiteLogoToDOM(customLogo);
 
                 // Top Information Bar Photo & Text
-                const topPhoto = localStorage.getItem('bhati_top_info_photo');
-                const topText = localStorage.getItem('bhati_top_info_text');
-                const topBg = localStorage.getItem('bhati_top_info_bg');
+                const topPhoto = localStorage.getItem('bhati_top_info_photo') || CFG.topInfoPhoto;
+                const topText = localStorage.getItem('bhati_top_info_text') || CFG.topInfoText;
+                const topBg = localStorage.getItem('bhati_top_info_bg') || CFG.topInfoBg;
                 const badgeEl = document.getElementById('topInfoBadgePhoto');
                 const textEl = document.getElementById('topInfoText');
                 const bgEl = document.getElementById('topInfoBgImage');
@@ -2008,10 +2019,28 @@ Cab Type: ${car}`;
             } catch (e) {}
         }
 
+        async function syncBookingsWithCloud(action, payload = {}) {
+            const proxyUrl = getActiveWaProxyUrl();
+            if (!proxyUrl || proxyUrl.includes('yourname.workers.dev')) return null;
+            try {
+                const res = await fetch(proxyUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action, ...payload })
+                });
+                if (!res.ok) return null;
+                return await res.json();
+            } catch (e) {
+                return null;
+            }
+        }
+
         function saveBookingLocally(entry) {
             const existing = getStoredBookings();
             existing.unshift(entry);
-            saveBookingsToStorage(existing.slice(0, 100));
+            const trimmed = existing.slice(0, 100);
+            saveBookingsToStorage(trimmed);
+            syncBookingsWithCloud('save_booking', { booking: entry });
         }
 
         // Admin Panel Functions
@@ -3134,6 +3163,37 @@ Cab Type: ${car}`;
                 if (chevron) chevron.classList.remove('rotate-180');
             }
         });
+
+        function downloadSiteConfigJs() {
+            const cleanPackages = packagesData.map(p => ({ ...p, currentIndex: 0 }));
+            const configObj = {
+                waProxyUrl: getActiveWaProxyUrl(),
+                web3formsKey: getActiveWeb3Key(),
+                dispatchWa: getActiveDispatchWa(),
+                callPhone: getActiveCallPhone(),
+                adminEmail: getActiveAdminEmail(),
+                officeHeading: getActiveOfficeHeading(),
+                officeAddress: getActiveOfficeAddress(),
+                topInfoText: localStorage.getItem('bhati_top_info_text') || CFG.topInfoText || '24/7 Cab Availability in Ujjain, Indore Airport & Omkareshwar',
+                topInfoPhoto: localStorage.getItem('bhati_top_info_photo') || CFG.topInfoPhoto || '',
+                topInfoBg: localStorage.getItem('bhati_top_info_bg') || CFG.topInfoBg || '',
+                websiteLogo: localStorage.getItem('bhati_website_logo') || CFG.websiteLogo || '',
+                heroImage: localStorage.getItem('bhati_hero_image') || CFG.heroImage || '',
+                heroOpacity: localStorage.getItem('bhati_hero_opacity') || CFG.heroOpacity || '50',
+                fleet: fleetData,
+                packages: cleanPackages
+            };
+            const jsContent = `// BHATI TOURS & TRAVELS - SITE CONFIGURATION\nwindow.SITE_CONFIG = ${JSON.stringify(configObj, null, 4)};\n`;
+            const blob = new Blob([jsContent], { type: 'application/javascript;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'site-config.js';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
 
         function downloadPermanentHtml() {
             const docClone = document.documentElement.cloneNode(true);

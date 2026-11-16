@@ -1,86 +1,137 @@
+// ============================================================================
+// BHATI TOURS & TRAVELS - CLOUDFLARE WORKER BACKEND PROXY
+// Required Cloudflare Worker Secrets (Settings -> Variables and Secrets):
+//   1. ADMIN_PIN      -> Your Admin Security Key
+//   2. RECORDS_PIN    -> Your Booking Records Vault Security Key
+// Optional Secrets (for automated Meta WhatsApp Cloud API alerts):
+//   3. WA_TOKEN       -> Meta WhatsApp Permanent Access Token
+//   4. WA_PHONE_ID    -> Meta WhatsApp Phone Number ID
+//   5. WA_TO_NUMBER   -> Recipient WhatsApp number (e.g. 918817278961)
+// Optional KV Namespace Binding (for cross-device Booking Records sync):
+//   Bind a KV namespace named BOOKINGS_KV in Worker Settings -> Bindings
+// ============================================================================
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...CORS_HEADERS,
+    },
+  });
+}
+
 export default {
   async fetch(request, env) {
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    if (request.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    if (request.method === 'GET') {
+      return jsonResponse({
+        ok: true,
+        service: 'Bhati Tours & Travels Backend Proxy',
+        status: 'active',
       });
+    }
+
+    if (request.method !== 'POST') {
+      return jsonResponse({ ok: false, error: 'Method not allowed' }, 405);
     }
 
     try {
       const body = await request.json();
+      const action = body.action || 'send_whatsapp';
 
-      // 1. Server-Side Admin & Records PIN Verification
-      if (body.action === "verify_pin") {
+      // 1. Verify Admin or Records Security PIN
+      if (action === 'verify_pin') {
         const { role, pin } = body;
-        const expectedPin = role === "records" ? env.RECORDS_PIN : env.ADMIN_PIN;
-
+        if (!pin) {
+          return jsonResponse({ ok: false, error: 'Security key is required.' }, 400);
+        }
+        const expectedPin = role === 'admin' ? env.ADMIN_PIN : env.RECORDS_PIN;
         if (!expectedPin) {
-          return new Response(
-            JSON.stringify({ ok: false, error: "Server PIN secret not configured in Cloudflare." }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          return jsonResponse(
+            {
+              ok: false,
+              error: `Server secret ${role === 'admin' ? 'ADMIN_PIN' : 'RECORDS_PIN'} is not configured in Cloudflare Worker Settings.`,
+            },
+            500
+          );
+        }
+        if (String(pin).trim() === String(expectedPin).trim()) {
+          return jsonResponse({ ok: true });
+        }
+        return jsonResponse({ ok: false, error: 'Incorrect Security Key. Access Denied.' }, 401);
+      }
+
+      // 2. Save Booking Record to Cloudflare KV (if BOOKINGS_KV is bound)
+      if (action === 'save_booking' && body.booking) {
+        if (env.BOOKINGS_KV) {
+          const existingRaw = await env.BOOKINGS_KV.get('all_bookings');
+          const existing = existingRaw ? JSON.parse(existingRaw) : [];
+          existing.unshift(body.booking);
+          await env.BOOKINGS_KV.put('all_bookings', JSON.stringify(existing.slice(0, 200)));
+          return jsonResponse({ ok: true, synced: true });
+        }
+        return jsonResponse({ ok: true, synced: false });
+      }
+
+      // 3. Fetch Bookings from Cloudflare KV (requires valid RECORDS_PIN)
+      if (action === 'get_bookings') {
+        if (!env.RECORDS_PIN || String(body.pin || '').trim() !== String(env.RECORDS_PIN).trim()) {
+          return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
+        }
+        if (env.BOOKINGS_KV) {
+          const existingRaw = await env.BOOKINGS_KV.get('all_bookings');
+          return jsonResponse({ ok: true, bookings: existingRaw ? JSON.parse(existingRaw) : [] });
+        }
+        return jsonResponse({ ok: true, bookings: [] });
+      }
+
+      // 4. Send Automated Meta WhatsApp Cloud API Alert
+      if (body.waBodyText) {
+        if (!env.WA_TOKEN || !env.WA_PHONE_ID || !env.WA_TO_NUMBER) {
+          return jsonResponse(
+            {
+              error: {
+                message: 'Meta WhatsApp API secrets not set on Worker. Use manual WhatsApp button below.',
+              },
+            },
+            400
           );
         }
 
-        if (String(pin || "").trim() === String(expectedPin).trim()) {
-          return new Response(JSON.stringify({ ok: true }), {
-            status: 200,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        return new Response(
-          JSON.stringify({ ok: false, error: "Incorrect Security Key. Access Denied." }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        const waRes = await fetch(
+          `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${env.WA_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: env.WA_TO_NUMBER,
+              type: 'text',
+              text: { body: body.waBodyText },
+            }),
+          }
         );
+
+        const waData = await waRes.json();
+        return jsonResponse(waData, waRes.status);
       }
 
-      // 2. Meta WhatsApp Cloud API Alert Dispatch
-      const { waBodyText } = body;
-      if (!waBodyText) {
-        return new Response(JSON.stringify({ error: { message: "Missing waBodyText" } }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const metaRes = await fetch(
-        `https://graph.facebook.com/v20.0/${env.WA_PHONE_NUMBER_ID}/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${env.WA_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: env.DISPATCH_PHONE || "918817278961",
-            type: "text",
-            text: { body: waBodyText },
-          }),
-        }
-      );
-
-      const metaData = await metaRes.json();
-      return new Response(JSON.stringify(metaData), {
-        status: metaRes.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: false, error: 'Unknown action' }, 400);
     } catch (err) {
-      return new Response(JSON.stringify({ error: { message: err.message } }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ ok: false, error: err.message || 'Invalid JSON payload' }, 400);
     }
   },
 };

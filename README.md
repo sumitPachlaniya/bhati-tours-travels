@@ -1,22 +1,36 @@
-# Bhati Tours & Travels - Ujjain Cab Booking System
+# Bhati Tours & Travels – Website & Booking System
 
-## Project Structure
-- `index.html`: Fully responsive single-file cab booking web application with Admin Dashboard, Booking Records Vault, auto-swipe car/package galleries, and WhatsApp/Email automation.
-- `cloudflare-worker.js`: Secure backend proxy and PIN verification worker for Cloudflare.
+Official website for **Bhati Tours & Travels, Ujjain** (`ujjaintaxiservices.com`).
 
-## Deployment Instructions
+## Project Folder Structure
 
-### 1. Host Website on Netlify / GitHub Pages
-- **Netlify**: Drag and drop the `bhati-tours` folder into Netlify Drop (https://app.netlify.com/drop) or deploy manually.
-- **GitHub Pages**: Upload `index.html` to a public repository and enable GitHub Pages under repository Settings -> Pages.
+```text
+bhati-tours-travels/
+├── index.html             # Main website & booking interface
+├── site-config.js         # Local configuration (phone, email, cars, packages, asset paths)
+├── assets/                # Local images folder (drop photos here & reference in site-config.js)
+├── cloudflare-worker.js   # Cloudflare Worker backend proxy (PIN verification & WhatsApp alerts)
+└── README.md              # Project setup & deployment guide
+```
 
-### 2. Deploy Cloudflare Worker
-1. Go to Cloudflare Dashboard -> Workers & Pages -> Create Worker.
-2. Paste the contents of `cloudflare-worker.js`.
-3. Add the following encrypted Secrets in Worker Settings -> Variables and Secrets:
-   - `ADMIN_PIN`: Your 6-digit Admin key (e.g., 896150)
-   - `RECORDS_PIN`: Your 6-digit Records key (e.g., 500721)
-   - `WA_ACCESS_TOKEN`: Meta WhatsApp Cloud API Token
-   - `WA_PHONE_NUMBER_ID`: Meta WhatsApp Phone Number ID
-   - `DISPATCH_PHONE`: 918817278961
-4. Copy your Worker URL (`https://...workers.dev`) and save it inside `index.html` under `DEFAULT_WA_PROXY_URL` or via the Admin panel.
+## How to Update Phone Numbers, Email & Images Locally
+
+1. **Add Images:** Drop your car, temple, logo, or banner photos inside the `assets/` folder (for example, `assets/innova.jpg`).
+2. **Edit Configuration:** Open `site-config.js` in VS Code and update:
+   - `dispatchWa` (WhatsApp alert number)
+   - `callPhone` (Public call & enquiry number)
+   - `adminEmail` (Booking notification email)
+   - `heroImage`, `websiteLogo`, `fleet`, or `packages` image paths (e.g. `'assets/innova.jpg'`)
+3. **Push to GitHub:**
+   ```cmd
+   git add .
+   git commit -m "Update contact details and images"
+   git push origin main
+   ```
+   Hostinger will automatically deploy your updates live.
+
+## Cloudflare Worker Secrets
+
+In your Cloudflare Dashboard (`Workers & Pages -> bhati-tours-travels -> Settings -> Variables and Secrets`), add:
+- `ADMIN_PIN`: Security key for the Admin panel
+- `RECORDS_PIN`: Security key for the Booking Records Vault
